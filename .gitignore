@@ -49,3 +49,10 @@ db.sqlite3-journal
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env.local
+

@@ -48,8 +48,9 @@ class Project(models.Model):
 
 class Employee(models.Model):
     """Model for managing employees."""
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    employee_name = models.CharField(max_length=200)
+    first_name = models.CharField(max_length=100, blank=True, default="")
+    last_name = models.CharField(max_length=100, blank=True, default="")
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     position = models.CharField(max_length=100)
@@ -59,19 +60,44 @@ class Employee(models.Model):
         null=True,
         related_name='employees'
     )
-    projects = models.ManyToManyField(
-        Project,
-        related_name='employees',
-        blank=True
-    )
     hire_date = models.DateField()
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name}".strip()
 
     class Meta:
         ordering = ['last_name', 'first_name']
         verbose_name_plural = "Employees"
+
+
+class EmployeeProject(models.Model):
+    """Explicit through model capturing role and hours worked."""
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="employee_projects")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="project_employees")
+    role = models.CharField(max_length=150, blank=True, default="")
+    hours_worked = models.FloatField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("employee", "project")
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.employee} -> {self.project} ({self.role})"
+
+
+# Link many-to-many through the explicit through model
+Employee.add_to_class(
+    "projects",
+    models.ManyToManyField(
+        Project,
+        through=EmployeeProject,
+        related_name="employees",
+        blank=True,
+    ),
+)

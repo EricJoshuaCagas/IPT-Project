@@ -1,8 +1,14 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Department, Project, Employee
-from .serializers import DepartmentSerializer, ProjectSerializer, EmployeeSerializer
+from django.db import connection
+from .models import Department, Project, Employee, EmployeeProject
+from .serializers import (
+    DepartmentSerializer,
+    ProjectSerializer,
+    EmployeeSerializer,
+    AssignmentSerializer
+)
 
 
 class DepartmentViewSet(viewsets.ModelViewSet):
@@ -142,3 +148,43 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         employees = Employee.objects.filter(is_active=True)
         serializer = self.get_serializer(employees, many=True)
         return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete an employee. Rely on DB-level CASCADE to remove EmployeeProject
+        rows that reference this employee. Departments/Projects remain intact.
+        Returns a JSON body with the deleted id.
+        """
+        employee = self.get_object()
+        deleted_id = employee.id
+        # Clearing M2M ensures legacy tables are cleaned even if CASCADE is misconfigured
+        employee.projects.clear()
+        EmployeeProject.objects.filter(employee=employee).delete()
+        # Legacy auto M2M table may still exist (management_employee_projects) with NO ACTION FKs.
+        with connection.cursor() as cursor:
+            try:
+                cursor.execute("DELETE FROM management_employee_projects WHERE employee_id = %s", [deleted_id])
+            except Exception:
+                # If table doesn't exist, ignore.
+                pass
+        employee.delete()
+        return Response({"deleted_id": deleted_id, "message": "Employee deleted with assignments removed"})
+
+
+class AssignmentViewSet(viewsets.ModelViewSet):
+    """
+    Manage EmployeeProject records (role + hours_worked persisted).
+    """
+
+    queryset = EmployeeProject.objects.select_related("employee", "project").all()
+    serializer_class = AssignmentSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        employee_id = self.request.query_params.get("employee_id")
+        project_id = self.request.query_params.get("project_id")
+        if employee_id:
+            qs = qs.filter(employee_id=employee_id)
+        if project_id:
+            qs = qs.filter(project_id=project_id)
+        return qs
